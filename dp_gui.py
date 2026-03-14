@@ -1,7 +1,7 @@
 # dp_gui.py
 # DP策略调参与可视化Tab
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFormLayout, QSpinBox, QDoubleSpinBox, QLineEdit, QTableWidget, QTableWidgetItem, QGroupBox, QMessageBox, QFileDialog, QHeaderView, QTabWidget, QComboBox, QCheckBox)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFormLayout, QSpinBox, QDoubleSpinBox, QLineEdit, QTableWidget, QTableWidgetItem, QGroupBox, QMessageBox, QFileDialog, QHeaderView, QTabWidget, QComboBox, QCheckBox, QSplitter, QScrollArea)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -42,19 +42,30 @@ class TradeTab(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        layout = QVBoxLayout()
-        font = self.font(); font.setPointSize(12); self.setFont(font)
-        # 预设选择
+        root_layout = QVBoxLayout()
+        font = self.font(); font.setPointSize(13); self.setFont(font)
+
+        splitter = QSplitter(Qt.Horizontal)
+
+        # 左侧：配置与求解
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setSpacing(14)
+
+        preset_box = QGroupBox('预设与基础配置')
+        preset_box.setFont(font)
         preset_layout = QHBoxLayout()
         preset_layout.addWidget(QLabel('选择配置:'))
         self.preset_combo = QComboBox(); self.preset_combo.addItems(list(self.presets.keys()))
         self.preset_combo.currentTextChanged.connect(self.on_preset_changed)
         preset_layout.addWidget(self.preset_combo)
-        layout.addLayout(preset_layout)
-        # 参数区
+        preset_box.setLayout(preset_layout)
+        left_layout.addWidget(preset_box)
+
         param_box = QGroupBox('参数调节')
         param_box.setFont(font)
         form = QFormLayout()
+        form.setSpacing(10)
         self.param_widgets = {}
         param_names = {
             'product_names': '商品名称列表',
@@ -82,38 +93,68 @@ class TradeTab(QWidget):
                 w = QLineEdit(str(val)); w.setFont(font)
             self.param_widgets[name] = w
             form.addRow(label, w)
-        # 新增time复选框
         self.time_checkbox = QCheckBox('用时间做种子'); self.time_checkbox.setFont(font)
         self.time_checkbox.setChecked(True)
         form.addRow(self.time_checkbox)
         param_box.setLayout(form)
-        layout.addWidget(param_box)
-        # 求解按钮
-        self.btn_solve = QPushButton('求解DP表'); self.btn_solve.setFont(font)
+        left_layout.addWidget(param_box)
+
+        self.btn_solve = QPushButton('求解DP表')
+        self.btn_solve.setFont(font)
         self.btn_solve.clicked.connect(self.on_solve)
-        layout.addWidget(self.btn_solve)
-        # 人工输入区
-        manual_box = QGroupBox('用户输入决策'); manual_box.setFont(font)
+        left_layout.addWidget(self.btn_solve)
+        left_layout.addStretch(1)
+
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setWidget(left_widget)
+        splitter.addWidget(left_scroll)
+
+        # 右侧：人工决策
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setSpacing(12)
+
+        manual_box = QGroupBox('用户输入决策')
+        manual_box.setFont(font)
         m_layout = QVBoxLayout()
-        m_layout.addWidget(QLabel('当前天数:'))
+
+        top_row = QHBoxLayout()
+        top_row.addWidget(QLabel('当前天数:'))
         self.day_spin = QSpinBox(); self.day_spin.setMaximum(self.cfg.horizon_days); self.day_spin.setValue(1); self.day_spin.setFont(font)
-        m_layout.addWidget(self.day_spin)
-        m_layout.addWidget(QLabel('当前可购买余量S:'))
+        top_row.addWidget(self.day_spin)
+        top_row.addSpacing(12)
+        top_row.addWidget(QLabel('当前可购买余量S:'))
         self.shelf_spin = QSpinBox(); self.shelf_spin.setMaximum(self.cfg.shelf_cap); self.shelf_spin.setValue(self.cfg.shelf_init); self.shelf_spin.setFont(font)
-        m_layout.addWidget(self.shelf_spin)
+        top_row.addWidget(self.shelf_spin)
+        top_row.addStretch(1)
+        m_layout.addLayout(top_row)
+
         self.price_table = QTableWidget(len(self.cfg.product_names), 2); self.price_table.setFont(font)
         self.price_table.setHorizontalHeaderLabels(['买入价', '好友最高价'])
+        self.price_table.horizontalHeader().setStretchLastSection(True)
+        self.price_table.verticalHeader().setDefaultSectionSize(30)
         for i, name in enumerate(self.cfg.product_names):
             self.price_table.setVerticalHeaderItem(i, QTableWidgetItem(name))
-        m_layout.addWidget(self.price_table)
+        m_layout.addWidget(self.price_table, 1)
+
+        action_row = QHBoxLayout()
         self.btn_decide = QPushButton('输出最优动作'); self.btn_decide.setFont(font)
         self.btn_decide.clicked.connect(self.on_decide)
-        m_layout.addWidget(self.btn_decide)
+        action_row.addWidget(self.btn_decide)
+        action_row.addStretch(1)
+        m_layout.addLayout(action_row)
+
         self.manual_result = QLabel(''); self.manual_result.setFont(font)
+        self.manual_result.setWordWrap(True)
         m_layout.addWidget(self.manual_result)
         manual_box.setLayout(m_layout)
-        layout.addWidget(manual_box)
-        self.setLayout(layout)
+        right_layout.addWidget(manual_box, 1)
+
+        splitter.addWidget(right_widget)
+        splitter.setSizes([380, 880])
+        root_layout.addWidget(splitter)
+        self.setLayout(root_layout)
 
     def on_preset_changed(self, preset):
         p = self.presets[preset]
@@ -223,12 +264,20 @@ class DpTab(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
         font = self.font()
-        font.setPointSize(12)
+        font.setPointSize(13)
         self.setFont(font)
-        # 参数区
+
+        main_splitter = QSplitter(Qt.Horizontal)
+
+        # 左侧控制区
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setSpacing(14)
+
         param_box = QGroupBox('DP参数调节')
         param_box.setFont(font)
         form = QFormLayout()
+        form.setSpacing(10)
         self.param_widgets = {}
         self.product_names_widget = None
         for name, val in self.cfg.__dict__.items():
@@ -247,13 +296,12 @@ class DpTab(QWidget):
                 w = QLineEdit(str(val)); w.setFont(font)
             self.param_widgets[name] = w
             form.addRow(name, w)
-        # 新增time复选框
         self.time_checkbox = QCheckBox('用时间做种子'); self.time_checkbox.setFont(font)
         self.time_checkbox.setChecked(True)
         form.addRow(self.time_checkbox)
         param_box.setLayout(form)
-        layout.addWidget(param_box)
-        # 按钮区
+        left_layout.addWidget(param_box)
+
         btn_layout = QHBoxLayout()
         self.btn_build = QPushButton('生成DP表并自动测试'); self.btn_build.setFont(font)
         self.btn_build.clicked.connect(self.on_build_dp)
@@ -264,43 +312,93 @@ class DpTab(QWidget):
         self.btn_load = QPushButton('导入DP表'); self.btn_load.setFont(font)
         self.btn_load.clicked.connect(self.on_load_dp)
         btn_layout.addWidget(self.btn_load)
-        layout.addLayout(btn_layout)
-        # DP表格区
-        self.dp_table_widget = QTableWidget()
-        self.dp_table_widget.setFont(font)
-        layout.addWidget(QLabel('DP阈值表（theta）'))
-        layout.addWidget(self.dp_table_widget)
-        # 图表区
-        self.fig = Figure(figsize=(6,4))
-        self.canvas = FigureCanvas(self.fig)
-        layout.addWidget(self.canvas)
-        # 决策详情区
-        self.detail_table = QTableWidget()
-        self.detail_table.setFont(font)
-        layout.addWidget(QLabel('每日决策详情'))
-        layout.addWidget(self.detail_table)
-        # 人工输入区
+        left_layout.addLayout(btn_layout)
+
         self.manual_box = QGroupBox('人工输入每日价格并输出动作'); self.manual_box.setFont(font)
         m_layout = QVBoxLayout()
+        top_row = QHBoxLayout()
+        top_row.addWidget(QLabel('当前天数:'))
         self.day_spin = QSpinBox(); self.day_spin.setMaximum(self.cfg.horizon_days); self.day_spin.setValue(1); self.day_spin.setFont(font)
-        m_layout.addWidget(QLabel('当前天数:'))
-        m_layout.addWidget(self.day_spin)
+        top_row.addWidget(self.day_spin)
+        top_row.addSpacing(12)
+        top_row.addWidget(QLabel('当前可购买余量S:'))
+        self.shelf_spin = QSpinBox(); self.shelf_spin.setMaximum(self.cfg.shelf_cap); self.shelf_spin.setValue(self.cfg.shelf_init); self.shelf_spin.setFont(font)
+        top_row.addWidget(self.shelf_spin)
+        top_row.addStretch(1)
+        m_layout.addLayout(top_row)
+
         self.price_table = QTableWidget(len(self.cfg.product_names), 2)
         self.price_table.setFont(font)
         self.price_table.setHorizontalHeaderLabels(['买入价', '好友最高价'])
+        self.price_table.horizontalHeader().setStretchLastSection(True)
+        self.price_table.verticalHeader().setDefaultSectionSize(30)
         for i, name in enumerate(self.cfg.product_names):
             self.price_table.setVerticalHeaderItem(i, QTableWidgetItem(name))
         m_layout.addWidget(self.price_table)
+
+        action_layout = QHBoxLayout()
         self.btn_manual = QPushButton('输出最优动作'); self.btn_manual.setFont(font)
         self.btn_manual.clicked.connect(self.on_manual_action)
-        m_layout.addWidget(self.btn_manual)
+        action_layout.addWidget(self.btn_manual)
         self.btn_auto_fill = QPushButton('自动填入机器生成价格'); self.btn_auto_fill.setFont(font)
         self.btn_auto_fill.clicked.connect(self.on_auto_fill)
-        m_layout.addWidget(self.btn_auto_fill)
+        action_layout.addWidget(self.btn_auto_fill)
+        action_layout.addStretch(1)
+        m_layout.addLayout(action_layout)
+
         self.manual_result = QLabel(''); self.manual_result.setFont(font)
+        self.manual_result.setWordWrap(True)
         m_layout.addWidget(self.manual_result)
         self.manual_box.setLayout(m_layout)
-        layout.addWidget(self.manual_box)
+        left_layout.addWidget(self.manual_box)
+        left_layout.addStretch(1)
+
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setWidget(left_widget)
+        main_splitter.addWidget(left_scroll)
+
+        # 右侧结果展示区
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setSpacing(12)
+
+        self.fig = Figure(figsize=(10, 6), tight_layout=True)
+        self.canvas = FigureCanvas(self.fig)
+        self.canvas.setMinimumHeight(420)
+
+        chart_box = QGroupBox('DP策略 vs Baseline 累计收益曲线')
+        chart_box.setFont(font)
+        chart_layout = QVBoxLayout(chart_box)
+        chart_layout.addWidget(self.canvas)
+
+        self.dp_table_widget = QTableWidget()
+        self.dp_table_widget.setFont(font)
+        dp_table_box = QGroupBox('DP阈值表（theta）')
+        dp_table_box.setFont(font)
+        dp_table_layout = QVBoxLayout(dp_table_box)
+        dp_table_layout.addWidget(self.dp_table_widget)
+
+        self.detail_table = QTableWidget()
+        self.detail_table.setFont(font)
+        detail_box = QGroupBox('每日决策详情')
+        detail_box.setFont(font)
+        detail_layout = QVBoxLayout(detail_box)
+        detail_layout.addWidget(self.detail_table)
+
+        result_splitter = QSplitter(Qt.Vertical)
+        result_splitter.addWidget(chart_box)
+        result_splitter.addWidget(dp_table_box)
+        result_splitter.addWidget(detail_box)
+        result_splitter.setStretchFactor(0, 5)
+        result_splitter.setStretchFactor(1, 3)
+        result_splitter.setStretchFactor(2, 3)
+
+        right_layout.addWidget(result_splitter)
+        main_splitter.addWidget(right_widget)
+        main_splitter.setSizes([550, 980])
+
+        layout.addWidget(main_splitter)
         self.setLayout(layout)
 
     def on_build_dp(self):
@@ -314,6 +412,10 @@ class DpTab(QWidget):
                     setattr(self.cfg, name, [x.strip() for x in w.text().split(',') if x.strip()])
                 else:
                     setattr(self.cfg, name, w.text())
+        self.day_spin.setMaximum(self.cfg.horizon_days)
+        self.shelf_spin.setMaximum(self.cfg.shelf_cap)
+        if self.shelf_spin.value() > self.cfg.shelf_cap:
+            self.shelf_spin.setValue(self.cfg.shelf_cap)
         self.cfg.time = self.time_checkbox.isChecked()
         self.btn_build.setEnabled(False)
         self.btn_build.setText('正在生成...')
@@ -433,8 +535,7 @@ class DpTab(QWidget):
         spread = best_p - self_p
         z = float(np.max(spread))
         t = self.day_spin.value() - 1
-        shelf = self.cfg.shelf_init if t == 0 else 0
-        S_after = min(self.cfg.shelf_cap, shelf + self.cfg.shelf_replenish_per_day)
+        S_after = self.shelf_spin.value()
         th = float(self.theta[t, S_after])
         if S_after == 0:
             msg = f'今日可用容量为0，无法操作。'
